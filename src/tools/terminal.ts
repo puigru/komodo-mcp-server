@@ -19,6 +19,7 @@ import type { ProgressReporter } from "mcp-server-framework";
 import { PARAM_DESCRIPTIONS, VALIDATION_LIMITS } from "../config/index.js";
 import { serverIdSchema, containerNameSchema, stackIdSchema, deploymentIdSchema } from "./schemas/index.js";
 import { requireClient, wrapApiCall } from "../utils/index.js";
+import { Types } from "komodo_client";
 
 // ============================================================================
 // Constants
@@ -38,6 +39,9 @@ const ESTIMATED_TOTAL_LINES = Math.ceil(MAX_OUTPUT_LENGTH / 80);
 
 /** Sentinel prefix emitted by Komodo to signal exit code */
 const EXIT_CODE_PREFIX = "__KOMODO_EXIT_CODE__:";
+
+/** Stable terminal name used for one-shot MCP exec sessions. */
+const MCP_EXEC_TERMINAL = "mcp-exec";
 
 // ============================================================================
 // Schemas
@@ -60,6 +64,22 @@ const terminalNameSchema = z
   .regex(/^[a-zA-Z0-9_.-]+$/, "Terminal name contains invalid characters")
   .default("mcp")
   .describe("Terminal session name on the server. If it doesn't exist, it will be created. Default: mcp");
+
+function quoteShellArg(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function makeNonEchoingShell(shell: string): string {
+  return `${shell} -c ${quoteShellArg(`stty -echo 2>/dev/null || true; exec ${shell}`)}`;
+}
+
+function execInit(shell: string): Types.InitTerminal {
+  return {
+    command: makeNonEchoingShell(shell),
+    mode: Types.ContainerTerminalMode.Exec,
+    recreate: Types.TerminalRecreateMode.Always,
+  };
+}
 
 // ============================================================================
 // Output Collection
@@ -289,12 +309,13 @@ export const containerExecTool = defineTool({
       () =>
         collectCallbackOutput(
           (callbacks) =>
-            komodo.client.execute_container_exec(
+            komodo.client.execute_container_terminal(
               {
                 server: args.server,
                 container: args.container,
-                shell: args.shell,
+                terminal: MCP_EXEC_TERMINAL,
                 command: args.command,
+                init: execInit(args.shell),
               },
               callbacks,
             ),
@@ -334,11 +355,12 @@ export const deploymentExecTool = defineTool({
       () =>
         collectCallbackOutput(
           (callbacks) =>
-            komodo.client.execute_deployment_exec(
+            komodo.client.execute_deployment_terminal(
               {
                 deployment: args.deployment,
-                shell: args.shell,
+                terminal: MCP_EXEC_TERMINAL,
                 command: args.command,
+                init: execInit(args.shell),
               },
               callbacks,
             ),
@@ -384,12 +406,13 @@ export const stackServiceExecTool = defineTool({
       () =>
         collectCallbackOutput(
           (callbacks) =>
-            komodo.client.execute_stack_exec(
+            komodo.client.execute_stack_service_terminal(
               {
                 stack: args.stack,
                 service: args.service,
-                shell: args.shell,
+                terminal: MCP_EXEC_TERMINAL,
                 command: args.command,
+                init: execInit(args.shell),
               },
               callbacks,
             ),

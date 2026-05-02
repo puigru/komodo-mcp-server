@@ -40,9 +40,6 @@ const ESTIMATED_TOTAL_LINES = Math.ceil(MAX_OUTPUT_LENGTH / 80);
 /** Sentinel prefix emitted by Komodo to signal exit code */
 const EXIT_CODE_PREFIX = "__KOMODO_EXIT_CODE__:";
 
-/** Stable terminal name used for one-shot MCP exec sessions. */
-const MCP_EXEC_TERMINAL = "mcp-exec";
-
 // ============================================================================
 // Schemas
 // ============================================================================
@@ -79,6 +76,11 @@ function execInit(shell: string): Types.InitTerminal {
     mode: Types.ContainerTerminalMode.Exec,
     recreate: Types.TerminalRecreateMode.Always,
   };
+}
+
+function makeExecTerminalName(): string {
+  const nonce = Math.random().toString(36).slice(2, 10);
+  return `mcp-exec-${Date.now().toString(36)}-${nonce}`;
 }
 
 // ============================================================================
@@ -303,6 +305,7 @@ export const containerExecTool = defineTool({
   },
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
+    const terminal = makeExecTerminalName();
 
     const result = await wrapApiCall(
       "executeContainerExec",
@@ -313,7 +316,7 @@ export const containerExecTool = defineTool({
               {
                 server: args.server,
                 container: args.container,
-                terminal: MCP_EXEC_TERMINAL,
+                terminal,
                 command: args.command,
                 init: execInit(args.shell),
               },
@@ -349,6 +352,7 @@ export const deploymentExecTool = defineTool({
   },
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
+    const terminal = makeExecTerminalName();
 
     const result = await wrapApiCall(
       "executeDeploymentExec",
@@ -358,7 +362,7 @@ export const deploymentExecTool = defineTool({
             komodo.client.execute_deployment_terminal(
               {
                 deployment: args.deployment,
-                terminal: MCP_EXEC_TERMINAL,
+                terminal,
                 command: args.command,
                 init: execInit(args.shell),
               },
@@ -400,6 +404,7 @@ export const stackServiceExecTool = defineTool({
   },
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
+    const terminal = makeExecTerminalName();
 
     const result = await wrapApiCall(
       "executeStackServiceExec",
@@ -410,7 +415,7 @@ export const stackServiceExecTool = defineTool({
               {
                 stack: args.stack,
                 service: args.service,
-                terminal: MCP_EXEC_TERMINAL,
+                terminal,
                 command: args.command,
                 init: execInit(args.shell),
               },

@@ -17,6 +17,8 @@ import {
   wrapApiCall,
   wrapExecuteAndPoll,
   formatUpdateResult,
+  combineLogStreams,
+  searchLogContent,
 } from "../utils/index.js";
 import { pruneTargetSchema, containerActionSchema, serverIdSchema, containerNameSchema } from "./schemas/index.js";
 
@@ -115,14 +117,7 @@ export const getContainerLogsTool = defineTool({
       abortSignal,
     );
 
-    let logContent = "";
-    if (result.stdout) {
-      logContent += result.stdout;
-    }
-    if (result.stderr) {
-      if (logContent) logContent += "\n\n=== STDERR ===\n";
-      logContent += result.stderr;
-    }
+    const logContent = combineLogStreams(result);
 
     return text(
       formatLogsResponse({
@@ -176,22 +171,16 @@ export const searchContainerLogsTool = defineTool({
       abortSignal,
     );
 
-    const logContent = result.stdout + (result.stderr ? "\n" + result.stderr : "");
-    const lines = logContent.split("\n");
-    const query = args.caseSensitive ? args.query : args.query.toLowerCase();
-
-    const filteredLines = lines.filter((line) => {
-      const searchLine = args.caseSensitive ? line : line.toLowerCase();
-      return searchLine.includes(query);
-    });
+    const logContent = combineLogStreams(result);
+    const searchResult = searchLogContent(logContent, args.query, args.caseSensitive);
 
     return text(
       formatSearchResponse({
         containerName: args.container,
         serverName: args.server,
         query: args.query,
-        matchCount: filteredLines.length,
-        matches: filteredLines.join("\n"),
+        matchCount: searchResult.matchCount,
+        matches: searchResult.matches,
       }),
     );
   },

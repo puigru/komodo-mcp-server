@@ -15,6 +15,9 @@ export { requireClient, checkCancelled, wrapApiCall } from "./api-helpers.js";
 // --- Polling ---
 export { extractUpdateId, wrapExecuteAndPoll, formatUpdateResult } from "./polling.js";
 
+// --- Logs ---
+export { combineLogStreams, searchLogContent, type LogStreams, type LogSearchResult } from "./logs.js";
+
 // --- Response Formatting ---
 export {
   formatActionResponse,
@@ -22,7 +25,9 @@ export {
   formatListHeader,
   formatInfoResponse,
   formatErrorResponse,
+  formatResourceLogsResponse,
   formatLogsResponse,
+  formatResourceSearchResponse,
   formatSearchResponse,
   formatPruneResponse,
   type ActionType,
@@ -32,7 +37,9 @@ export {
   type ListResponseOptions,
   type InfoResponseOptions,
   type ErrorResponseOptions,
+  type ResourceLogsResponseOptions,
   type LogsResponseOptions,
+  type ResourceSearchResponseOptions,
   type SearchResponseOptions,
   type PruneResponseOptions,
 } from "./response-formatter.js";

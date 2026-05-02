@@ -190,14 +190,37 @@ export interface LogsResponseOptions {
   lines?: number;
 }
 
-export function formatLogsResponse(options: LogsResponseOptions): string {
-  const { containerName, serverName, logs, lines } = options;
+export interface ResourceLogsResponseOptions {
+  resourceType: string;
+  resourceName: string;
+  locationType?: string;
+  locationName?: string;
+  logs: string;
+  lines?: number;
+}
 
-  let header = `📋 Logs for container "${containerName}" on server "${serverName}"`;
+export function formatResourceLogsResponse(options: ResourceLogsResponseOptions): string {
+  const { resourceType, resourceName, locationType, locationName, logs, lines } = options;
+
+  let header = `📋 Logs for ${resourceType} "${resourceName}"`;
+  if (locationType && locationName) header += ` in ${locationType} "${locationName}"`;
   if (lines !== undefined) header += ` (last ${lines} lines)`;
 
   if (!logs || logs.trim() === "") return `${header}\n\n(No logs available)`;
   return `${header}\n\n\`\`\`\n${logs}\n\`\`\``;
+}
+
+export function formatLogsResponse(options: LogsResponseOptions): string {
+  const { containerName, serverName, logs, lines } = options;
+  const responseOptions: ResourceLogsResponseOptions = {
+    resourceType: "container",
+    resourceName: containerName,
+    locationType: "server",
+    locationName: serverName,
+    logs,
+  };
+  if (lines !== undefined) responseOptions.lines = lines;
+  return formatResourceLogsResponse(responseOptions);
 }
 
 export interface SearchResponseOptions {
@@ -208,14 +231,38 @@ export interface SearchResponseOptions {
   matches: string;
 }
 
-export function formatSearchResponse(options: SearchResponseOptions): string {
-  const { containerName, serverName, query, matchCount, matches } = options;
+export interface ResourceSearchResponseOptions {
+  resourceType: string;
+  resourceName: string;
+  locationType?: string;
+  locationName?: string;
+  query: string;
+  matchCount: number;
+  matches: string;
+}
 
-  const header = `🔍 Search results for "${query}" in container "${containerName}" on server "${serverName}"`;
+export function formatResourceSearchResponse(options: ResourceSearchResponseOptions): string {
+  const { resourceType, resourceName, locationType, locationName, query, matchCount, matches } = options;
+
+  let header = `🔍 Search results for "${query}" in ${resourceType} "${resourceName}"`;
+  if (locationType && locationName) header += ` in ${locationType} "${locationName}"`;
   const countLine = `Found ${matchCount} matching ${matchCount === 1 ? "line" : "lines"}`;
 
   if (matchCount === 0 || !matches.trim()) return `${header}\n\n${countLine}`;
   return `${header}\n\n${countLine}\n\n\`\`\`\n${matches}\n\`\`\``;
+}
+
+export function formatSearchResponse(options: SearchResponseOptions): string {
+  const { containerName, serverName, query, matchCount, matches } = options;
+  return formatResourceSearchResponse({
+    resourceType: "container",
+    resourceName: containerName,
+    locationType: "server",
+    locationName: serverName,
+    query,
+    matchCount,
+    matches,
+  });
 }
 
 export interface PruneResponseOptions {

@@ -8,14 +8,24 @@
 
 import { defineTool, text, z } from "mcp-server-framework";
 import { Types } from "komodo_client";
-import { PARAM_DESCRIPTIONS, CONFIG_DESCRIPTIONS } from "../config/index.js";
+import {
+  PARAM_DESCRIPTIONS,
+  CONFIG_DESCRIPTIONS,
+  CONTAINER_LOGS_DEFAULTS,
+  LOG_DESCRIPTIONS,
+  LOG_SEARCH_DEFAULTS,
+} from "../config/index.js";
 import {
   formatActionResponse,
   formatInfoResponse,
+  formatResourceLogsResponse,
+  formatResourceSearchResponse,
   requireClient,
   wrapApiCall,
   wrapExecuteAndPoll,
   formatUpdateResult,
+  combineLogStreams,
+  searchLogContent,
 } from "../utils/index.js";
 import {
   stackConfigSchema,
@@ -26,6 +36,34 @@ import {
 } from "./schemas/index.js";
 
 type StackListItem = Types.StackListItem;
+type Log = Types.Log;
+
+const stackServiceNameSchema = z
+  .string()
+  .min(1, "Service name cannot be empty")
+  .max(255, "Service name is too long")
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/, "Service name contains invalid characters");
+
+function formatStackLogResource(
+  stack: string,
+  services: readonly string[],
+): {
+  resourceType: string;
+  resourceName: string;
+  locationType?: string;
+  locationName?: string;
+} {
+  if (services.length === 0) {
+    return { resourceType: "stack", resourceName: stack };
+  }
+
+  return {
+    resourceType: services.length === 1 ? "stack service" : "stack services",
+    resourceName: services.join(", "),
+    locationType: "stack",
+    locationName: stack,
+  };
+}
 
 // ============================================================================
 // List
@@ -70,6 +108,132 @@ export const getStackInfoTool = defineTool({
     return text(
       formatInfoResponse({ resourceType: "stack", resourceId: args.stack, content: JSON.stringify(result, null, 2) }),
     );
+  },
+});
+
+// ============================================================================
+// Stack Logs / Inspect
+// ============================================================================
+
+export const getStackLogsTool = defineTool({
+  name: "komodo_get_stack_logs",
+  description:
+    "Get stdout and stderr logs from a Komodo-managed stack. Optionally filter logs to specific services within the stack.",
+  input: z.object({
+    stack: stackIdSchema.describe(PARAM_DESCRIPTIONS.STACK_ID),
+    services: z
+      .array(stackServiceNameSchema)
+      .optional()
+      .default([])
+      .describe(PARAM_DESCRIPTIONS.STACK_SERVICE_NAMES_FOR_LOGS),
+    tail: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .default(CONTAINER_LOGS_DEFAULTS.TAIL)
+      .describe(LOG_DESCRIPTIONS.TAIL_LINES(CONTAINER_LOGS_DEFAULTS.TAIL)),
+    timestamps: z
+      .boolean()
+      .optional()
+      .default(CONTAINER_LOGS_DEFAULTS.TIMESTAMPS)
+      .describe(LOG_DESCRIPTIONS.TIMESTAMPS(CONTAINER_LOGS_DEFAULTS.TIMESTAMPS)),
+  }),
+  annotations: { readOnlyHint: true },
+  handler: async (args, { abortSignal }) => {
+    const komodo = requireClient();
+
+    const result: Log = await wrapApiCall(
+      "getStackLogs",
+      () =>
+        komodo.client.read("GetStackLog", {
+          stack: args.stack,
+          services: args.services,
+          tail: args.tail,
+          timestamps: args.timestamps,
+        }),
+      abortSignal,
+    );
+
+    return text(
+      formatResourceLogsResponse({
+        ...formatStackLogResource(args.stack, args.services),
+        logs: combineLogStreams(result),
+        lines: args.tail,
+      }),
+    );
+  },
+});
+
+export const searchStackLogsTool = defineTool({
+  name: "komodo_search_stack_logs",
+  description:
+    "Search stack logs for specific patterns or keywords. Optionally filter logs to specific services within the stack.",
+  input: z.object({
+    stack: stackIdSchema.describe(PARAM_DESCRIPTIONS.STACK_ID),
+    services: z
+      .array(stackServiceNameSchema)
+      .optional()
+      .default([])
+      .describe(PARAM_DESCRIPTIONS.STACK_SERVICE_NAMES_FOR_SEARCH),
+    query: z.string().describe(LOG_DESCRIPTIONS.SEARCH_QUERY),
+    tail: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .default(LOG_SEARCH_DEFAULTS.TAIL)
+      .describe(LOG_DESCRIPTIONS.TAIL_LINES_FOR_SEARCH(LOG_SEARCH_DEFAULTS.TAIL)),
+    caseSensitive: z
+      .boolean()
+      .optional()
+      .default(LOG_SEARCH_DEFAULTS.CASE_SENSITIVE)
+      .describe(LOG_DESCRIPTIONS.CASE_SENSITIVE(LOG_SEARCH_DEFAULTS.CASE_SENSITIVE)),
+  }),
+  annotations: { readOnlyHint: true },
+  handler: async (args, { abortSignal }) => {
+    const komodo = requireClient();
+
+    const result: Log = await wrapApiCall(
+      "searchStackLogs",
+      () =>
+        komodo.client.read("GetStackLog", {
+          stack: args.stack,
+          services: args.services,
+          tail: args.tail,
+          timestamps: false,
+        }),
+      abortSignal,
+    );
+    const searchResult = searchLogContent(combineLogStreams(result), args.query, args.caseSensitive);
+
+    return text(
+      formatResourceSearchResponse({
+        ...formatStackLogResource(args.stack, args.services),
+        query: args.query,
+        matchCount: searchResult.matchCount,
+        matches: searchResult.matches,
+      }),
+    );
+  },
+});
+
+export const inspectStackContainerTool = defineTool({
+  name: "komodo_inspect_stack_container",
+  description: "Get detailed low-level information about a service container associated with a Komodo-managed stack.",
+  input: z.object({
+    stack: stackIdSchema.describe(PARAM_DESCRIPTIONS.STACK_ID),
+    service: stackServiceNameSchema.describe(PARAM_DESCRIPTIONS.STACK_SERVICE_NAME_FOR_INSPECT),
+  }),
+  annotations: { readOnlyHint: true },
+  handler: async (args, { abortSignal }) => {
+    const komodo = requireClient();
+    const result = await wrapApiCall(
+      "inspectStackContainer",
+      () => komodo.client.read("InspectStackContainer", { stack: args.stack, service: args.service }),
+      abortSignal,
+    );
+    return text(JSON.stringify(result, null, 2));
   },
 });
 
